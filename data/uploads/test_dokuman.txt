@@ -1,0 +1,26 @@
+LABORATUVAR NUMUNE TESLİM PROSEDÜRLERİ
+
+1. NUMUNE HAZIRLAMA
+Laboratuvara gönderilecek numuneler, steril kaplara alınmalıdır. Numune kapları üzerine hasta adı, TC kimlik numarası, numune türü ve alım tarihi yazılmalıdır. Numuneler oda sıcaklığında bekletilemez; soğuk zincir korunmalıdır.
+
+2. BARKOD OKUTMA İŞLEMİ
+Numune tesliminden önce barkod okutma işlemi zorunludur. Barkod, hasta kabul sisteminde üretilerek numunenin üzerine yapıştırılır. Barkod okutulamayan numuneler kabul edilmez ve iade edilir.
+
+3. LABORATUVAR KABUL BİRİMİ
+Barkod okutulduktan sonra numuneler Laboratuvar Kabul Birimine teslim edilir. Kabul birimi çalışma saatleri 08:00-18:00 arasındadır. Mesai dışı teslimler Acil Laboratuvar penceresinden yapılır.
+
+4. NUMUNE REDDİ KRİTERLERİ
+Aşağıdaki durumlarda numune reddedilir:
+- Etiket bilgileri eksik veya okunaksız olan numuneler
+- Barkodu bulunmayan numuneler
+- Kırık veya sızdıran kap içindeki numuneler
+- Hemolizli kan numuneleri (uygunsuz alım koşulları)
+- Yanlış tüpe alınan numuneler
+
+5. SONUÇ TESLİMİ
+Rutin laboratuvar sonuçları 4-6 saat içinde sisteme yüklenir. Acil sonuçlar 1 saat içinde raporlanır. Sonuçlar hastane bilgi sistemi (HBS) üzerinden görüntülenebilir.
+
+6. İLETİŞİM
+Laboratuvar Kabul Birimi dahili: 1234
+Acil Laboratuvar dahili: 1235
+E-posta: laboratuvar@hastane.com
