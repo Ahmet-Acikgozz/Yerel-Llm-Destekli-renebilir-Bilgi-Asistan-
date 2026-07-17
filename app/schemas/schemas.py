@@ -18,11 +18,16 @@ class QueryRequest(BaseModel):
         max_length=100,
         description="Soruyu soran kullanıcı adı",
     )
+    source_filter: Optional[str] = Field(
+        default=None,
+        description="Sadece bu dokümanda ara (ör: 'ik_rehberi.pdf')",
+    )
 
 class QueryResponse(BaseModel):
     question: str
     answer: str
-    confidence_score: float = Field(description="0.0 - 1.0 arası güven skoru")
+    confidence_score: float = Field(description="Embedding benzerlik skoru (0-1)")
+    rerank_score: float = Field(default=0.0, description="Cross-Encoder re-rank skoru (0-1)")
     sources: list[str] = Field(default=[], description="Cevabın dayandığı kaynak chunk'lar")
     answered: bool = Field(description="True = cevap bulundu, False = bilgi bulunamadı")
 

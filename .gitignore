@@ -1,0 +1,22 @@
+# Ortam değişkenleri ve sırlar
+.env
+
+# Sanal ortam
+venv/
+env/
+.venv/
+
+# Python derleme dosyaları
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Veritabanı ve veri dosyaları
+data/
+*.sqlite
+*.db
+
+# IDE ve işletim sistemi dosyaları
+.vscode/
+.idea/
+.DS_Store

@@ -49,12 +49,13 @@ app.add_middleware(
 )
 
 # API Router'lari bagla
-from app.api import query, documents, knowledge, admin
+from app.api import query, documents, knowledge, admin, auth
 
+app.include_router(auth.router, prefix="/auth", tags=["Kimlik Dogrulama (Auth)"])
 app.include_router(query.router, prefix="/query", tags=["Sorgulama (RAG)"])
-app.include_router(documents.router, prefix="/documents", tags=["Doküman Yönetimi"])
-app.include_router(knowledge.router, prefix="/knowledge", tags=["Manuel Bilgi Girişi"])
-app.include_router(admin.router, prefix="/admin", tags=["Yönetici İşlemleri"])
+app.include_router(documents.router, prefix="/documents", tags=["Dokuman Yonetimi"])
+app.include_router(knowledge.router, prefix="/knowledge", tags=["Manuel Bilgi Girisi"])
+app.include_router(admin.router, prefix="/admin", tags=["Yonetici Islemi [ADMIN]"])
 
 @app.get("/health", tags=["Genel"])
 async def health_check():

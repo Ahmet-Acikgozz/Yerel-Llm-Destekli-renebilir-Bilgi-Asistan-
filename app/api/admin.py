@@ -4,6 +4,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.models import PendingQuestion, QuestionStatus
+from app.core.auth import require_admin
 from app.schemas.schemas import PendingQuestionOut, AnswerRequest, AnswerResponse
 from app.services.vector_store import vector_store
 
@@ -12,11 +13,12 @@ router = APIRouter()
 @router.get(
     "/pending-questions",
     response_model=list[PendingQuestionOut],
-    summary="Bekleyen soruları listele",
+    summary="Bekleyen soruları listele [ADMIN]",
 )
 async def list_pending_questions(
     status: str | None = None,
     db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(require_admin),
 ):
     query = select(PendingQuestion).order_by(PendingQuestion.asked_at.desc())
     if status == "Bekliyor":
@@ -30,12 +32,13 @@ async def list_pending_questions(
 @router.post(
     "/answer/{question_id}",
     response_model=AnswerResponse,
-    summary="Bekleyen soruya cevap ver",
+    summary="Bekleyen soruya cevap ver [ADMIN]",
 )
 async def answer_question(
     question_id: int,
     body: AnswerRequest,
     db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(require_admin),
 ):
     result = await db.execute(select(PendingQuestion).where(PendingQuestion.id == question_id))
     question = result.scalar_one_or_none()

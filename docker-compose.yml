@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+
+  # ── FastAPI Backend ─────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: sosmart-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # ChromaDB ve SQLite verileri kaybolmasın
+      - ./data:/app/data
+    environment:
+      # Ollama lokalde çalışıyor → host.docker.internal ile erişiyoruz
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=qwen2.5:3b
+      - CONFIDENCE_THRESHOLD=0.5
+      - JWT_SECRET_KEY=sosmart-super-secret-key-2024-change-in-production
+      - JWT_EXPIRE_MINUTES=480
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin123
+      - USER_USERNAME=user
+      - USER_PASSWORD=user123
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Gradio Frontend ─────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: sosmart-frontend
+    ports:
+      - "7860:7860"
+    environment:
+      # Frontend backend'e container adıyla erişiyor
+      - API_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# NOT: Ollama GPU gerektirdiği için Docker dışında lokalde çalışıyor.
+# Backend ona host.docker.internal:11434 üzerinden ulaşıyor.
+# Linux'ta host.docker.internal yerine host-gateway kullanılır.

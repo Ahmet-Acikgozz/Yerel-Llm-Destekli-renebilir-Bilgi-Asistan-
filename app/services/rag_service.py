@@ -1,3 +1,20 @@
+"""
+rag_service.py  (2. Hafta — Modül 1)
+
+1. Hafta: ChromaDB → top-3 → LLM
+2. Hafta: ChromaDB → top-10 → Re-ranker → top-4 → LLM
+           Threshold: rerank_score < 0.30 → direkt "Bulunamadı"
+           Metadata filtre: sadece belirli dokümanda arama
+
+Adımlar:
+  1. Soruyu embedding'e çevir
+  2. ChromaDB'de n_results=10 ile geniş arama yap (metadata filtreli)
+  3. Re-ranker ile yeniden sırala → top 4
+  4. En iyi rerank_score < RERANK_THRESHOLD → LLM'e gitme, "Bulunamadı"
+  5. LLM'e sadece top-4 chunk'ı gönder
+  6. LLM "found: false" dönerse → pending'e kaydet
+"""
+
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,72 +23,108 @@ from app.core.config import settings
 from app.core.models import PendingQuestion, QuestionStatus
 from app.services.vector_store import vector_store
 from app.services.llm_service import llm_service
+from app.services.reranker_service import reranker_service
+
 
 class RAGService:
+    """
+    2. Hafta RAG Pipeline:
+      Embedding arama + Cross-Encoder re-ranking + LLM
+    """
+
+    # Re-ranking sonrası bu eşiğin altındaki sonuçlar LLM'e gönderilmez
+    RERANK_THRESHOLD: float = 0.30
+
     async def answer(
         self,
         question: str,
         user: str,
         db: AsyncSession,
-        n_results: int = 3,
+        n_results: int = 10,
+        source_filter: str | None = None,
     ) -> dict:
-        search_results = vector_store.search(question, n_results=n_results)
+        """
+        Soruyu tam RAG+ReRank pipeline'ından geçirir.
 
-        best_score = search_results[0]["score"] if search_results else 0.0
+        Parametreler:
+          question      : Kullanıcının sorusu
+          user          : Soruyu soran kullanıcı adı
+          db            : SQLAlchemy async session
+          n_results     : ChromaDB'den kaç sonuç çekilsin (geniş ağ: 10)
+          source_filter : Sadece bu dokümanda ara (ör: "ik_rehberi.pdf")
+        """
 
-        if best_score < settings.confidence_threshold:
+        # ── ADIM 1: ChromaDB'de geniş arama ──
+        search_results = vector_store.search(
+            query=question,
+            n_results=n_results,
+            source_filter=source_filter,
+        )
 
+        if not search_results:
             await self._save_pending_question(question, user, db)
-            return {
-                "question": question,
-                "answer": "Bu konu hakkinda bilgi tabaninda yeterli bilgi bulunamadi. "
-                          "Sorunuz yonetici incelemesine alindi.",
-                "confidence_score": round(best_score, 4),
-                "sources": [],
-                "answered": False,
-            }
+            return self._not_found_response(question, 0.0)
 
-        good_chunks = [
-            r["text"]
-            for r in search_results
-            if r["score"] >= settings.confidence_threshold
-        ]
-        
+        # ── ADIM 2: Re-ranking ile yeniden sırala ──
+        reranked = reranker_service.rerank(
+            query=question,
+            candidates=search_results,
+            top_k=4,
+        )
 
+        best_rerank_score = reranked[0]["rerank_score"] if reranked else 0.0
+        best_embed_score = reranked[0]["score"] if reranked else 0.0
+
+        # ── ADIM 3: Re-rank eşiği kontrolü ──
+        if best_rerank_score < self.RERANK_THRESHOLD:
+            await self._save_pending_question(question, user, db)
+            return self._not_found_response(question, best_embed_score)
+
+        # ── ADIM 4: LLM için bağlamı hazırla ──
+        good_chunks = [r["text"] for r in reranked]
         source_texts = [
-            r["text"][:200] + "..."
-            for r in search_results
-            if r["score"] >= settings.confidence_threshold
+            f"[{r['source']}] {r['text'][:200]}..."
+            for r in reranked
         ]
 
+        # ── ADIM 5: LLM'den cevap al ──
         llm_result = await llm_service.generate(
             question=question,
             context_chunks=good_chunks,
         )
 
+        # ── ADIM 6: LLM cevap bulamadıysa kaydet ──
         if not llm_result["found"]:
             await self._save_pending_question(question, user, db)
-            return {
-                "question": question,
-                "answer": "Bu konu hakkinda bilgi tabaninda yeterli bilgi bulunamadi. "
-                          "Sorunuz yonetici incelemesine alindi.",
-                "confidence_score": round(best_score, 4),
-                "sources": [],
-                "answered": False,
-            }
+            return self._not_found_response(question, best_embed_score)
 
+        # ── ADIM 7: Başarılı cevap döndür ──
         return {
             "question": question,
             "answer": llm_result["answer"],
-            "confidence_score": round(best_score, 4),
+            "confidence_score": round(best_embed_score, 4),
+            "rerank_score": round(best_rerank_score, 4),
             "sources": source_texts,
             "answered": True,
+        }
+
+    def _not_found_response(self, question: str, score: float) -> dict:
+        return {
+            "question": question,
+            "answer": (
+                "Bu konu hakkinda bilgi tabaninda yeterli bilgi bulunamadi. "
+                "Sorunuz yonetici incelemesine alindi."
+            ),
+            "confidence_score": round(score, 4),
+            "rerank_score": 0.0,
+            "sources": [],
+            "answered": False,
         }
 
     async def _save_pending_question(
         self, question: str, user: str, db: AsyncSession
     ) -> None:
-
+        """Cevaplanamayan soruyu SQLite'a kaydeder."""
         from sqlalchemy import select
         existing = await db.execute(
             select(PendingQuestion).where(
@@ -90,7 +143,7 @@ class RAGService:
         )
         db.add(pending)
         await db.commit()
-        print(f"[RAG] Bekleyen soru kaydedildi: '{question[:60]}...'")
+        print(f"[RAG] Bekleyen soru kaydedildi: '{question[:60]}'")
 
-# Global singleton instance
+
 rag_service = RAGService()
