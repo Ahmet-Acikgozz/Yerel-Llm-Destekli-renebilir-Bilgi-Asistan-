@@ -33,7 +33,9 @@ class RAGService:
     """
 
     # Re-ranking sonrası bu eşiğin altındaki sonuçlar LLM'e gönderilmez
-    RERANK_THRESHOLD: float = 0.30
+    # Not: Admin cevapları Q&A formatında saklandığından Cross-Encoder düşük skor
+    # verebilir. 0.10 hem kalite kontrolünü korur hem de admin cevaplarını geçirir.
+    RERANK_THRESHOLD: float = 0.10
 
     async def answer(
         self,
@@ -98,7 +100,10 @@ class RAGService:
             await self._save_pending_question(question, user, db)
             return self._not_found_response(question, best_embed_score)
 
-        # ── ADIM 7: Başarılı cevap döndür ──
+        # ── ADIM 7: Eğer bu soru daha önce bekleyen sorular listesindeyse, otomatik cevaplandı yap ──
+        await self._resolve_pending_question(question, llm_result["answer"], db)
+
+        # ── ADIM 8: Başarılı cevap döndür ──
         return {
             "question": question,
             "answer": llm_result["answer"],
@@ -120,6 +125,28 @@ class RAGService:
             "sources": [],
             "answered": False,
         }
+
+    async def _resolve_pending_question(
+        self, question: str, answer: str, db: AsyncSession
+    ) -> None:
+        """Eğer bu soru önceden PENDING olarak kayıtlıysa, otomatik olarak ANSWERED yapar."""
+        from sqlalchemy import select, update
+        stmt = (
+            update(PendingQuestion)
+            .where(
+                PendingQuestion.question == question,
+                PendingQuestion.status == QuestionStatus.PENDING,
+            )
+            .values(
+                status=QuestionStatus.ANSWERED,
+                admin_answer=f"[Doküman/RAG]: {answer[:200]}",
+                answered_at=datetime.now(timezone.utc),
+            )
+        )
+        res = await db.execute(stmt)
+        if res.rowcount > 0:
+            await db.commit()
+            print(f"[RAG] Bekleyen soru dokuman/otomatik ile cevaplandi olarak isaretlendi: '{question[:60]}'")
 
     async def _save_pending_question(
         self, question: str, user: str, db: AsyncSession

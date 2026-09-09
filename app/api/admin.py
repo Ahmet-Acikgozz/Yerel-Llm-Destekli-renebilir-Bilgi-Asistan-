@@ -21,10 +21,11 @@ async def list_pending_questions(
     _admin: dict = Depends(require_admin),
 ):
     query = select(PendingQuestion).order_by(PendingQuestion.asked_at.desc())
-    if status == "Bekliyor":
-        query = query.where(PendingQuestion.status == QuestionStatus.PENDING)
-    elif status == "Cevaplandi":
+    if status == "Cevaplandi":
         query = query.where(PendingQuestion.status == QuestionStatus.ANSWERED)
+    else:
+        # Varsayılan: sadece bekleyen soruları getir
+        query = query.where(PendingQuestion.status == QuestionStatus.PENDING)
 
     result = await db.execute(query)
     return result.scalars().all()
@@ -48,9 +49,9 @@ async def answer_question(
     if question.status == QuestionStatus.ANSWERED:
         raise HTTPException(status_code=400, detail=f"Bu soru zaten cevaplandı (ID={question_id}).")
 
+    # ChromaDB'ye bilgi olarak ekle
     knowledge_text = f"Soru: {question.question}\nCevap: {body.answer}"
-
-    record_id = vector_store.add_single_text(
+    vector_store.add_single_text(
         text=knowledge_text,
         source="admin_cevap",
         extra_metadata={
@@ -60,19 +61,27 @@ async def answer_question(
         },
     )
 
-    question.status = QuestionStatus.ANSWERED
-    question.admin_answer = body.answer
-    question.answered_at = datetime.now(timezone.utc)
+    # SQLite'ta statüyü direkt SQL UPDATE ile güncelle (async ORM'de daha güvenilir)
+    from sqlalchemy import update as sql_update
+    await db.execute(
+        sql_update(PendingQuestion)
+        .where(PendingQuestion.id == question_id)
+        .values(
+            status=QuestionStatus.ANSWERED,
+            admin_answer=body.answer,
+            answered_at=datetime.now(timezone.utc),
+        )
+    )
     await db.commit()
-    await db.refresh(question)
 
     return AnswerResponse(
         question_id=question_id,
         question=question.question,
         answer=body.answer,
         chunks_created=1,
-        message="Cevap bilgi tabanina eklendi."
+        message="Cevap bilgi tabanina eklendi ve soru listeden kaldirildi."
     )
+
 
 @router.get("/stats", summary="Sistem istatistikleri")
 async def get_stats(db: AsyncSession = Depends(get_db)):

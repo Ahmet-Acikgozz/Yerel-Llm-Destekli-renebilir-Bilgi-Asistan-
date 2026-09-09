@@ -4,7 +4,7 @@ Gradio 6 uyumlu surum.
 
 Sekmeler:
   1. Kullanici Sohbet Ekrani
-  2. Yonetici Paneli (login + dokuman yukleme + bekleyen sorular)
+  2. Yonetici Paneli (login + dokuman yukleme + bek,leyen sorular)
 
 Calistirma: venv/Scripts/python.exe frontend/app.py
 Adres: http://localhost:7860
@@ -25,9 +25,11 @@ def api_query(question: str, source_filter: str | None = None) -> dict:
         payload["source_filter"] = source_filter
     try:
         r = requests.post(f"{API_URL}/query/", json=payload, timeout=120)
-        return r.json()
+        if r.status_code == 200:
+            return r.json()
+        return {"error": f"Backend Sunucu Hatasi (HTTP {r.status_code}): {r.text[:200]}"}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Baglanti Kurulamadi: {e}"}
 
 
 def api_login(username: str, password: str) -> str | None:
@@ -118,10 +120,9 @@ def chat_with_bot(message: str, history: list, source_filter: str):
         bot_reply = result["answer"]
         bot_reply += f"\n\n---\n📊 Benzerlik: `{score:.2f}` | Re-rank: `{rerank:.2f}`"
         if sources:
-            bot_reply += "\n\n📄 **Kaynaklar:**"
-            for s in sources[:2]:
-                preview = s[:120].replace("\n", " ")
-                bot_reply += f"\n> {preview}..."
+            bot_reply += "\n\n📄 **Kaynak:**"
+            preview = sources[0][:150].replace("\n", " ")
+            bot_reply += f"\n> {preview}..."
     else:
         score = result.get("confidence_score", 0)
         bot_reply = (
@@ -130,7 +131,8 @@ def chat_with_bot(message: str, history: list, source_filter: str):
             f"📊 En yakin skor: `{score:.2f}`"
         )
 
-    history.append((message, bot_reply))
+    history.append({"role": "user", "content": message})
+    history.append({"role": "assistant", "content": bot_reply})
     return history, ""
 
 
@@ -162,10 +164,9 @@ def load_pending_questions(token: str):
     if not token:
         return [], "⚠️ Lutfen once giris yapin."
     questions = api_get_pending(token)
-    pending = [q for q in questions if q["status"] == "Bekliyor"]
     rows = [
         [q["id"], q["question"][:80], q["asked_by"], q["asked_at"][:10]]
-        for q in pending
+        for q in questions
     ]
     msg = f"📋 {len(rows)} bekleyen soru bulundu."
     return rows, msg
@@ -173,16 +174,19 @@ def load_pending_questions(token: str):
 
 def submit_answer(token: str, question_id_text: str, answer_text: str):
     if not token:
-        return "⚠️ Lutfen once giris yapin."
+        return "⚠️ Lutfen once giris yapin.", [], ""
     if not question_id_text.strip():
-        return "⚠️ Lutfen asagidan bir soru ID'si girin."
+        return "⚠️ Lutfen asagidan bir soru ID'si girin.", [], ""
     if not answer_text.strip():
-        return "⚠️ Cevap alani bos birakilamaz."
+        return "⚠️ Cevap alani bos birakilamaz.", [], ""
     try:
         qid = int(question_id_text.strip())
     except ValueError:
-        return "❌ Gecersiz soru ID'si."
-    return api_answer_question(token, qid, answer_text)
+        return "❌ Gecersiz soru ID'si.", [], ""
+    msg = api_answer_question(token, qid, answer_text)
+    # Cevap verildikten sonra listeyi yenile
+    rows, status_msg = load_pending_questions(token)
+    return msg, rows, ""
 
 
 def upload_document(token: str, file, category: str):
@@ -357,7 +361,7 @@ with gr.Blocks(title="SoSmart Bilgi Asistani") as demo:
             answer_btn.click(
                 submit_answer,
                 inputs=[token_state, question_id_input, answer_input],
-                outputs=[answer_result],
+                outputs=[answer_result, pending_table, answer_input],
             )
             upload_btn.click(
                 upload_document,
